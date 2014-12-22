@@ -1,0 +1,62 @@
+jobname: nightly_job
+output: /Users/jkg/irc/YamlHadoopRecipe/etc/testoutput
+conf:
+  something: testvalue
+  somethingelse: 123
+mappers:
+  - input: /Users/jgeyti/irc/YamlHadoopRecipe/etc/test.txt
+    inputformat: org.apache.hadoop.mapreduce.lib.input.TextInputFormat
+    objects:
+      hadoop: edu.ucl.mrrr.helpers.HadoopFormats()
+      twitter: edu.ucl.mrrr.helpers.Twitter()
+      jsonstore: edu.ucl.mrrr.helpers.JsonStore()
+      nlp: edu.ucl.mrrr.helpers.Nlp("english")
+      strutil: edu.ucl.mrrr.helpers.StringUtils()
+
+    steps:
+      # the following final values are available to the step methods:
+      #
+      # key:      the current input key
+      # value:    the current input value
+      # path:     the current input path
+
+      # convert input data to something we can work with
+      - do: jsonstore.extractCity(path)     -> city
+      - do: hadoop.textToString(value)      -> _
+      - do: jsonstore.splitJsonStoreStr(_)  -> _
+      - do: twitter.parseJsons(_)            -> tweets
+
+      # parse each tweet in input
+      - for: tweets -> tweet
+        steps:
+          # count all tweets
+          - emit: '"amount_of_tweets", 1'
+
+          # count regional tweets
+          - do: jsonstore.toRegion(tweet) -> _ # support json beans, i.e. ' tweet.user.location '
+          - do: strutil.append("regioncount_", _)       -> regionkey
+          - if: jsonstore.isUkRegion(regionkey)
+            then:
+              - emit: regionkey, 1
+            else:
+              - emit: '"regioncount_ignored", 1'
+
+      - do: nlp.slidingWindow() -> windows
+      - for: windows -> window
+        steps:
+          - do: strutil.join(window, " ")  -> window
+          - emit: window, 1
+  - input: /Users/jgeyti/irc/YamlHadoopRecipe/etc/test2.txt
+    inputformat: org.apache.hadoop.mapreduce.lib.input.TextInputFormat
+    objects:
+      strutil: edu.ucl.mrrr.helpers.StringUtils()
+    steps:
+      - emit: '"test", 1'
+
+reducer:
+  objects:
+      util: edu.ucl.mrrr.helpers.MathUtil()
+  steps:
+    - do: util.sum(values) -> sum
+    - emit: key, sum
+      path: something

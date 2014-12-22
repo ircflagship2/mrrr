@@ -1,0 +1,59 @@
+jobname: old_yaml_test_2014_uk
+output: /user/jgeyti/results/some_folder
+conf:
+  stopwords: include:///cs/research/fmedia/fmedia12/hadoop_exp_conf/word_lists/stopwords.txt
+  pathFilter: ".*(Doncaster|Oxford|Gloucester|Greater_Manchester|Blackburn|Grimsby|Reading|Barnsley_Dearne_Valley|West_Yorkshire|Bedford|South_Hampshire|Burton_upon_Trent|Exeter|Burton-upon-Trent|Norwich|Milton_Keynes|Sunderland_Wearside|Teesside|Bournemouth_Poole|Northampton|Bristol|Hastings|Maidstone|Basildon|Peterborough|Stoke_on_Trent|Mansfield|Kingston_upon_Hull|Chesterfield|Derby|Colchester|Sheffield|Southend_on_Sea|Greater_London|Telford|Sunderland|Ipswich|Nottingham|Wigan|Accrington_Rossendale|Lincoln|Brighton_and_Hove|Eastbourne|York|Luton|Tyneside|Chelmsford|Paignton_Torquay|Southend-on-Sea|Worcester|Stoke-on-Trent|Crawley|Cheltenham|Farnborough_Aldershot|Plymouth|Slough|Medway_Towns|Leicester|Liverpool|High_Wycome|Cambridge|High_Wycombe|West_Midlands|Preston_Central_Lancashire|Birkenhead|Warrington|Preston|Basingstoke|Burnley|Coventry|Thanet|Swindon|Blackpool).*"
+  fluwords: include:///cs/research/fmedia/fmedia12/hadoop_exp_conf/word_lists/fluwords_10_2014_v2.txt
+mappers:
+  - input: /user/jgeyti/nightly/jsonstore/2014*.lzo
+    inputformat: org.apache.hadoop.mapreduce.lib.input.TextInputFormat
+    objects:
+      file: uk.ac.ucl.pipeline.mapsteps.File()
+      helper: uk.ac.ucl.pipeline.mapsteps.Helpers()
+      nlp: uk.ac.ucl.pipeline.mapsteps.Textprocessing()
+    # steps are called for each input in input file
+    steps:
+      # the following values are available to the step methods:
+      #
+      # key:      the current input key
+      # value:    the current input value
+      # path:     the current input path
+
+      # we only want to work with files in the given pathFilter
+      - if: file.FilenameFilter(path, pathFilter)
+        then:        
+          # this input is within our target region. JSONstore input lines may contain multiple
+          # tweets, so extract all
+          - do: helper.textValueToString(value)               -> _
+          - do: nlp.tweetParser(_)                            -> tweets
+
+          # process each tweet
+          - for: tweets -> tweets:
+            steps:
+              # count this tweet
+              - do:   helper.getRegionAndDate(tweet)                -> countKey              
+              - emit: countKey, 1
+
+              # extract ngrams
+              - do:   nlp.twokenizationPreprocessor(tweet)          -> _
+              - do:   nlp.twokenizer(_)                             -> _
+              - do:   nlp.twokenReplacer(_)                         -> _
+              - do:   nlp.stopwordRemover(_, stopwords)             -> _
+              - do:   nlp.listContainsListOutputSearch(_, fluwords) -> _
+              - do:   nlp.ngramKeyValueBuilder(_) -> ngrams
+
+              # and count each ngram
+              - for:  ngrams -> ngram
+                steps:
+                  - emit: ngram, 1
+reducer:
+  objects:
+      util: uk.ac.ucl.mrrr.Numbertool()
+  # steps are called for each unique emitted key
+  steps:
+    # the following values are available to the step methods
+    #
+    # key: the unique key sent to this reducer
+    # values: all the values emitted with this key (a bunch of ones)
+    - do: tool.sum(values, 3) -> sum
+      emit: key, sum
