@@ -1,87 +1,57 @@
 package edu.ucl.mrrr.traversal;
 
-import edu.ucl.mrrr.callbacks.YamlJobTraversalCallback;
+import edu.ucl.mrrr.callbacks.YamlJobCommonCallback;
+import edu.ucl.mrrr.callbacks.YamlJobMapperCallback;
+import edu.ucl.mrrr.callbacks.YamlJobReducerCallback;
 import edu.ucl.mrrr.recipe.*;
 
 /**
  * Created by jgeyti on 22/12/14.
  */
-public class DefaultTraversal {
-    public void traverse(Recipe recipe, YamlJobTraversalCallback callback) throws Exception {
+public class DefaultTraversal extends StepTraverser {
 
+    public void traverse(Recipe recipe, YamlJobMapperCallback mapperCallback, YamlJobReducerCallback reducerCallback) throws Exception {
+        traverseMappers(recipe, mapperCallback);
+        traverseReducer(recipe, reducerCallback);
+    }
+
+    public void traverseMappers(Recipe recipe, YamlJobMapperCallback callback) throws Exception {
         callback.preMappers(recipe);
 
         for (MapperRecipe mapper : recipe.getMappers()) {
-
-            callback.preMapper(mapper);
-            while(callback.mapHasNext()) {
-                for (MrrrStep mapStep : mapper.getSteps()) {
-                    step(mapStep, callback);
-                }
-            }
-            callback.postMapper(mapper);
+            traverseMapper(callback, mapper);
         }
 
         callback.postMappers(recipe);
+    }
 
+    public void traverseMapper(YamlJobMapperCallback callback, MapperRecipe mapper) throws Exception {
+        callback.preMapper(mapper);
+        while(callback.mapHasNext()) {
+            traverseMapperSteps(callback, mapper);
+        }
+        callback.postMapper(mapper);
+    }
+
+    public void traverseMapperSteps(YamlJobMapperCallback callback, MapperRecipe mapper) throws Exception {
+        for (MrrrStep mapStep : mapper.getSteps()) {
+            step(mapStep, callback);
+        }
+    }
+
+    public void traverseReducer(Recipe recipe, YamlJobReducerCallback callback) throws Exception {
         ReducerRecipe reducer = recipe.getReducer();
         callback.preReduce(recipe);
         while( callback.reducerHasNext() ) {
-            for (MrrrStep reduceStep : reducer.getSteps()) {
-                step(reduceStep, callback);
-            }
+            traverseReduceSteps(callback, reducer);
         }
         callback.postReduce(recipe);
     }
 
-    private void step(MrrrStep step, YamlJobTraversalCallback callback) {
-
-        if (step.getIf() != null) {
-            // is an IF conditional step
-            callback.preIf(step.getIf(), step.hashCode());
-            Boolean condition = callback.evaluateIf(step.getIf(), step.hashCode());
-
-            // Run THEN?
-            if (condition == null || condition == true) {
-                callback.preThen(step.getThen(), condition, step.hashCode());
-                for (MrrrStep thenstep : step.getThen()) {
-                    step(thenstep, callback);
-                }
-                callback.postThen(step.getThen(), condition, step.hashCode());
-            }
-
-            // Run ELSE?
-            if (step.getElse() != null && (condition == null || !condition)) {
-                callback.preElse(step.getElse(), condition, step.hashCode());
-                for (MrrrStep elsestep : step.getElse()) {
-                    step(elsestep, callback);
-                }
-                callback.postElse(step.getElse(), condition, step.hashCode());
-            }
-
-            callback.postIf(step.getIf(), step.hashCode());
-        } else if (step.getFor() != null) {
-            // is a FOREACH LOOP?
-            MrrrFor foreach = step.getFor();
-            if (foreach != null) {
-                //traverse for loop
-                callback.preFor(foreach, step.hashCode());
-                Iterable iter = callback.getForIterable(foreach, step.hashCode());
-                String as = foreach.as;
-                for (Object obj : iter) {
-                    callback.setForValue(as, obj);
-                    for (MrrrStep forStep : step.getSteps()) {
-                        step(forStep, callback);
-                    }
-                }
-                callback.postFor(step.getFor(), step.hashCode());
-            }
-        } else if (step.getEmit() != null) {
-            // is an EMIT
-            callback.emit(step.getEmit(), step.hashCode());
-        } else {
-            // this is a regular DO clause
-            callback.call(step.getDo(), step.hashCode());
+    public void traverseReduceSteps(YamlJobReducerCallback callback, ReducerRecipe reducer) throws Exception {
+        for (MrrrStep reduceStep : reducer.getSteps()) {
+            step(reduceStep, callback);
         }
     }
+
 }

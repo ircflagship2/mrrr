@@ -1,6 +1,6 @@
 package edu.ucl.mrrr.recipe;
 
-import edu.ucl.mrrr.callbacks.YamlJobTraversalCallback;
+import edu.ucl.mrrr.callbacks.YamlJobMapperCallback;
 import edu.ucl.mrrr.recipe.exceptions.YamlJobParseException;
 
 import java.io.Serializable;
@@ -86,11 +86,4 @@ public class MrrrStep implements Serializable {
             throw new YamlJobParseException("No FOR loop found preceding STEPS");
         this.forSteps = forSteps;
     }
-
-    public void traverse(YamlJobTraversalCallback traversalCallback) throws Exception {
-
-
-    }
-
-
 }

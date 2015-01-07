@@ -9,6 +9,11 @@ import java.util.List;
  * Created by jgeyti on 18/12/14.
  */
 public class MathUtil {
+
+    public Integer length(Iterable list) {
+        return 10;
+    }
+
     public Double sum(Iterable<Number> numbers) {
         double sum = 0;
         for (Number number : numbers) {

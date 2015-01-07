@@ -40,7 +40,9 @@ public class MrrrMethodCall {
         this.arguments = arguments;
 
         // get return variable name
-        returnVariable = classAndArgs.substring(classAndArgs.indexOf("->") + 2).trim();
+        if (classAndArgs.contains("->")) {
+            returnVariable = classAndArgs.substring(classAndArgs.indexOf("->") + 2).trim();
+        }
     }
 
     public String getObject() {

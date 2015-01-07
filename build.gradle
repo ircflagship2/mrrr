@@ -4,7 +4,11 @@ apply plugin: 'application'
 sourceCompatibility = 1.5
 version = '1.0'
 
-mainClassName = "edu.ucl.mrrr.YamlRunnerLocal"
+mainClassName = "edu.ucl.mrrr.HadoopRunner"
+
+run{
+    args 'etc/example.yaml'
+}
 
 repositories {
     mavenCentral()
@@ -26,10 +30,10 @@ configurations {
 dependencies {
     // compiles
     compile 'org.apache.hadoop:hadoop-client:2.2.0'
-    compile 'org.apache.commons:commons-lang3:3.3.2'
-    compile 'commons-beanutils:commons-beanutils:1.9.2'
 
     // includeInJars
+    includeInJar 'org.apache.commons:commons-lang3:3.3.2'
+    includeInJar 'commons-beanutils:commons-beanutils:1.9.2'
     includeInJar 'org.yaml:snakeyaml:1.14'
     includeInJar 'net.jodah:typetools:0.3.1'
 
@@ -51,10 +55,6 @@ jar {
 task copyDependencies(type:Copy) {
     from configurations.compile
     into 'build/dependencies'
-}
-
-run{
-    args 'example.yaml'
 }
 
 task sshdeploy() {

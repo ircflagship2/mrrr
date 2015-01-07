@@ -13,7 +13,7 @@ import java.util.*;
 /**
  * Created by jgeyti on 17/12/14.
  */
-public class MethodCachingValidateCallback implements YamlJobTraversalCallback {
+public class MethodCachingValidateCallback implements YamlJobMapperCallback, YamlJobReducerCallback {
 
     public Map<String, Class> globalVariables = new HashMap<String, Class>();
     public Map<String, Type> variables = new HashMap<String, Type>();
@@ -21,11 +21,18 @@ public class MethodCachingValidateCallback implements YamlJobTraversalCallback {
     public Map<String, Object> objects = new HashMap<String, Object>();
     public HashMap<Integer, MethodInstance> methods = new HashMap<Integer, MethodInstance>();
 
+    public Class mapEmitKeyType;
+    public Class mapEmitValType;
     public Class emitKeyType;
     public Class emitValType;
 
+    public List<MapperMetaData> mapperMetaData = new ArrayList<MapperMetaData>();
+    private MapperMetaData currentMapperMetaData;
+    public ReducerMetaData reduceMetaData;
+
     public boolean firstMap = true;
     public boolean firstReduce = true;
+    ;
 
     @Override
     public void preMappers(Recipe job) {
@@ -56,6 +63,14 @@ public class MethodCachingValidateCallback implements YamlJobTraversalCallback {
 
             // Create object instances
             this.objects = createObjects(mapper.getObjects());
+
+            // Store information about this mapper, so it can be used outside of this class
+            MapperMetaData metaData = new MapperMetaData();
+            this.currentMapperMetaData = metaData;
+            metaData.inputPath = mapper.getInput();
+            metaData.inputFormat = (Class<InputFormat<?, ?>>) Class.forName(mapper.getInputformat());
+            this.mapperMetaData.add(metaData);
+
         } catch (IllegalArgumentException e) {
 
             e.printStackTrace();
@@ -122,7 +137,8 @@ public class MethodCachingValidateCallback implements YamlJobTraversalCallback {
 
     @Override
     public void postMapper(MapperRecipe mapStep) {
-
+        currentMapperMetaData.emitKeyType = this.emitKeyType;
+        currentMapperMetaData.emitValType = this.emitValType;
     }
 
     @Override
@@ -143,9 +159,13 @@ public class MethodCachingValidateCallback implements YamlJobTraversalCallback {
         }
 
         // set keys and value types
-        variables.put("key", emitKeyType);
-        List<Class> dummyValue = new ArrayList<Class>();
-        variables.put("values", ArrayList.class); // todo: how do I specify generic type?
+        resetVariables();
+        if (emitKeyType != null) {
+            variables.put("key", emitKeyType);
+            List<Class> dummyValue = new ArrayList<Class>();
+            variables.put("values", Iterable.class); // todo: how do I specify generic type?
+        }
+
 
         // then reset emit key and value types, as the reducer output type is not dependent on the mapper output
         // types
@@ -156,7 +176,9 @@ public class MethodCachingValidateCallback implements YamlJobTraversalCallback {
 
     @Override
     public void postReduce(Recipe recipe) {
-
+        this.reduceMetaData = new ReducerMetaData();
+        reduceMetaData.emitKeyType = this.emitKeyType;
+        reduceMetaData.emitValType = this.emitValType;
     }
 
     @Override

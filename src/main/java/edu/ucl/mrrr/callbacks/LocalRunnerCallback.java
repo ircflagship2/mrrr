@@ -12,7 +12,9 @@ import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl;
 import org.apache.hadoop.util.ReflectionUtils;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -21,21 +23,22 @@ import java.util.*;
 /**
  * Created by jgeyti on 18/12/14.
  */
-public class LocalRunnerCallback implements YamlJobTraversalCallback {
+public class LocalRunnerCallback extends CommonRunnerCallback implements YamlJobMapperCallback, YamlJobReducerCallback {
 
     private RecordReader recordReader;
 
     private enum Stage { MAP, REDUCE }
     private Stage stage;
 
-    private HashMap<Integer, MethodInstance> methods;
+
     private Object currentValue;
     private Object currentKey;
     public Map<String, Object> globalVariables = new HashMap<String, Object>();
-    public Map<String, Object> variables = new HashMap<String, Object>();
+
 
     private Map<Writable, List<WritableComparable>> mapEmits = new HashMap<Writable, List<WritableComparable>>();
     private Iterator<Map.Entry<Writable, List<WritableComparable>>> reduceIterator;
+    private BufferedWriter reduceWriter;
 
     public LocalRunnerCallback(HashMap<Integer, MethodInstance> methods) {
         this.methods = methods;
@@ -78,10 +81,6 @@ public class LocalRunnerCallback implements YamlJobTraversalCallback {
             TaskAttemptContext context = new TaskAttemptContextImpl(conf, new TaskAttemptID());
             recordReader = inputFormat.createRecordReader(split, context);
             recordReader.initialize(split, context);
-
-            // initialise variables
-
-
         } catch (ClassNotFoundException e) {
             e.printStackTrace();
         } catch (InterruptedException e) {
@@ -114,86 +113,31 @@ public class LocalRunnerCallback implements YamlJobTraversalCallback {
 
         // Create the reduce iterator
         reduceIterator = mapEmits.entrySet().iterator();
+
+        // Open up output file (the localrunner only creates one)
+        File file = new File(recipe.getOutput() + "/part-r-00000");
+
+        // if file doesnt exists, then create it
+        try {
+            if (!file.exists()) {
+                file.createNewFile();
+            }
+
+            FileWriter fw = new FileWriter(file.getAbsoluteFile());
+            reduceWriter = new BufferedWriter(fw);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
     }
 
     @Override
     public void postReduce(Recipe recipe) {
-
-    }
-
-    @Override
-    public void preIf(MrrrMethodCall anIf, int hashCode) {
-
-    }
-
-    @Override
-    public Boolean evaluateIf(MrrrMethodCall anIf, int hashCode) {
-        // Get method and instance to call it on
-        MethodInstance methodPair = methods.get(hashCode);
-        Object instance = methodPair.instance;
-        Method method = methodPair.method;
-
-        // Get input
-        Object[] arguments = resolveArguments(anIf.getArguments());
-
         try {
-            return (Boolean)method.invoke(instance, arguments);
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
+            reduceWriter.close();
+        } catch (IOException e) {
             e.printStackTrace();
         }
-
-        System.err.println("No boolean returned"); //todo: err handling
-        return false;
-    }
-
-    @Override
-    public void preThen(List<MrrrStep> then, Boolean condition, int hashCode) {
-
-    }
-
-    @Override
-    public void postThen(List<MrrrStep> then, Boolean condition, int hashCode) {
-
-    }
-
-    @Override
-    public void preElse(List<MrrrStep> anElse, Boolean condition, int hashCode) {
-
-    }
-
-    @Override
-    public void postElse(List<MrrrStep> anElse, Boolean condition, int hashCode) {
-
-    }
-
-    @Override
-    public void postIf(MrrrMethodCall anIf, int hashCode) {
-
-    }
-
-    @Override
-    public void preFor(MrrrFor foreach, int hashCode) {
-
-    }
-
-    @Override
-    public Iterable getForIterable(MrrrFor foreach, int hashCode) {
-        Object iter = variables.get(foreach.collection);
-
-        return (Iterable)iter;
-
-    }
-
-    @Override
-    public void setForValue(String variable, Object obj) {
-        variables.put(variable, obj);
-    }
-
-    @Override
-    public void postFor(MrrrFor foreach, int hashCode) {
-        variables.remove(foreach.as);
     }
 
     @Override
@@ -202,39 +146,26 @@ public class LocalRunnerCallback implements YamlJobTraversalCallback {
         WritableComparable value = (WritableComparable)simpleTypeToWritable(resolveArgument(emit.getValue()));
 
         if (stage == Stage.MAP) {
-            List<WritableComparable> writables = mapEmits.get(key);
-            if (writables == null) {
-                writables = new ArrayList<WritableComparable>();
-                mapEmits.put(key, writables);
-            }
-            writables.add(value);
+            mapEmit(key, value);
         } else {
-            System.out.println(key + "," + value);
+            reduceEmit(key, value);
         }
     }
 
-    @Override
-    public void call(MrrrMethodCall do_, int hashCode) {
-        // Get method and instance to call it on
-        MethodInstance methodPair = methods.get(hashCode);
-        Object instance = methodPair.instance;
-        Method method = methodPair.method;
+    private void mapEmit(Writable key, WritableComparable value) {
+        List<WritableComparable> writables = mapEmits.get(key);
+        if (writables == null) {
+            writables = new ArrayList<WritableComparable>();
+            mapEmits.put(key, writables);
+        }
+        writables.add(value);
+    }
 
-        // Get input
-        Object[] arguments = resolveArguments(do_.getArguments());
-
+    private void reduceEmit(Writable key, WritableComparable value) {
+        System.out.println(key + "," + value);
         try {
-            Object obj = method.invoke(instance, arguments);
-            String retVar = do_.getReturnVariable();
-            if (retVar != null) {
-                variables.put(retVar, obj);
-            }
-        } catch (IllegalArgumentException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
-            System.err.println("InvocationException: " + method);
+            reduceWriter.write(key + "," + value + "\n");
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
@@ -279,21 +210,7 @@ public class LocalRunnerCallback implements YamlJobTraversalCallback {
         }
     }
 
-    private Object[] resolveArguments(List<MrrrArgument> mrrrArguments) {
-        List<Object> args = new ArrayList<Object>();
-        for (MrrrArgument yamlArg : mrrrArguments) {
-            args.add(resolveArgument(yamlArg));
-        }
-        return args.toArray(new Object[args.size()]);
-    }
 
-    private Object resolveArgument(MrrrArgument yamlArg) {
-            if (yamlArg.getType() == MrrrArgument.Type.VARIABLE) {
-                return variables.get((String) yamlArg.getValue());
-            } else {
-                return yamlArg.getValue();
-            }
-    }
 
     public Writable simpleTypeToWritable(Object in) {
         if (in instanceof String) {
